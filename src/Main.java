@@ -1,5 +1,4 @@
-import java.util.ArrayList;
-import java.util.List;
+import schedulers.Schedulers;
 
 public class Main {
 
@@ -17,6 +16,28 @@ public class Main {
 //            }
 //        });
 
+//        List<Integer> list = new ArrayList<>();
+//        list.add(1);
+//        list.add(2);
+//        list.add(3);
+//        MyObservable.just(list)
+//                .subscribe(new MyObserver<Integer>() {
+//                    @Override
+//                    public void onNext(Integer integer) {
+//                        System.out.println("onNext:" + integer);
+//                    }
+//
+//                    @Override
+//                    public void onCompleted() {
+//                        System.out.println("onCompleted");
+//                    }
+//
+//                    @Override
+//                    public void onError(Throwable e) {
+//
+//                    }
+//                });
+
         MyObservable.create(new MyAction1<MyObserver<Integer>>() {
             @Override
             public void call(MyObserver<Integer> myObserver) {
@@ -24,33 +45,21 @@ public class Main {
                 myObserver.onNext(2);
                 myObserver.onNext(3);
                 myObserver.onCompleted();
+                System.out.println(Thread.currentThread().getName());
             }
-        }).start(new MyObserver<Integer>() {
-            @Override
-            public void onNext(Integer integer) {
-                System.out.println("onNext:" + integer);
-            }
-
-            @Override
-            public void onCompleted() {
-                System.out.println("onCompleted");
-            }
-
-            @Override
-            public void onError(Throwable e) {
-
-            }
-        });
-
-        List<Integer> list = new ArrayList<>();
-        list.add(1);
-        list.add(2);
-        list.add(3);
-        MyObservable.just(list)
-                .start(new MyObserver<Integer>() {
+        })
+                .subscribeOn(Schedulers.childThread())
+                .map(new Func<Integer, String>() {
                     @Override
-                    public void onNext(Integer integer) {
-                        System.out.println("onNext:" + integer);
+                    public String call(Integer integer) {
+                        return String.valueOf(integer);
+                    }
+                })
+                .observeOn(Schedulers.childThread())
+                .subscribe(new MyObserver<String>() {
+                    @Override
+                    public void onNext(String string) {
+                        System.out.println("onNext:" + Thread.currentThread().getName());
                     }
 
                     @Override
@@ -63,5 +72,7 @@ public class Main {
 
                     }
                 });
+
+
     }
 }
