@@ -30,7 +30,7 @@
      - [RxJava的发送和接收原理](#RxJava的发送和接收原理)
      - [事件发送](#事件发送)
      - [接收](#接收)
-     - [操作符 just 的实现](#操作符just的实现)
+     - [操作符just的实现](#操作符just的实现)
   - [3.事件的接收](#3.事件的接收) 
   - [4.变换](#4.变换) 
   - [5.线程](#5.线程) 
@@ -530,7 +530,7 @@ processNetDataJob 直接由 getDataJob 通过 ```map()``` 方法变换得到，�
 >  - Callback&lt;T&gt;，就是 Observer， 只是少了一个 ```onComplete( )``` 方法。
 >  - ```start(Callback callback)``` 方法，则对应 ```subscribe(Observer observer)``` 方法。
 
-## 2.事件的发送与接收
+## **2.事件的发送与接收**
 
 鉴于网上有很多从源码角度深入理解 RxJava 的文章，这里就不再做过多重复的分析。我们直接用 RxJava 所提供的设计思想，来看如何实现自己的 RxJava。
 
@@ -678,7 +678,7 @@ MyObservable.create(new MyAction1<MyObserver<Integer>>() {
 > onNext:3 
 > onCompleted
 
-### **操作符 just 的实现**
+### **操作符just的实现**
 
 RxJava 不仅支持单一事件的发送，还支持序列事件的发送，来看下面的例子。
 ```
@@ -758,11 +758,11 @@ public static <T> Observable<T> just(T t1, T t2, T t3, T t4, T t5) {}
 
 知道这个原理之后，我们就可以按照自己想要的方式自行定义我们的操作符，这里不做展开了。
 
-## 3.变换
+## **3.变换**
 
 
 
-## 4.线程
+## **4.线程**
 
 
   [1]: http://on-img.com/chart_image/5b5fd685e4b0edb750f22768.png
