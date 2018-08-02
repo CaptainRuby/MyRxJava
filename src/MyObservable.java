@@ -1,16 +1,19 @@
 import schedulers.Scheduler;
 
-import java.util.LinkedList;
-
 public class MyObservable<T> {
 
     private MyAction1<MyObserver<T>> action;
+
+    private Scheduler subscribeScheduler;
 
     private MyObservable(MyAction1<MyObserver<T>> action) {
         this.action = action;
     }
 
-    private LinkedList<Scheduler> schedulers = new LinkedList<>();
+    private MyObservable(MyAction1<MyObserver<T>> action, Scheduler scheduler) {
+        this.action = action;
+        subscribeScheduler = scheduler;
+    }
 
     public static <T> MyObservable<T> create(MyAction1<MyObserver<T>> action) {
         return new MyObservable<T>(action);
@@ -54,6 +57,36 @@ public class MyObservable<T> {
                     }
                 });
             }
+        }, subscribeScheduler);
+    }
+
+    public MyObservable<T> subscribeOn() {
+        MyObservable<T> upstream = this;
+        return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+            @Override
+            public void call(MyObserver<T> myObserver) {
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        upstream.subscribe(new MyObserver<T>() {
+                            @Override
+                            public void onNext(T t) {
+                                myObserver.onNext(t);
+                            }
+
+                            @Override
+                            public void onCompleted() {
+                                myObserver.onCompleted();
+                            }
+
+                            @Override
+                            public void onError(Throwable e) {
+                                myObserver.onError(e);
+                            }
+                        });
+                    }
+                }).start();
+            }
         });
     }
 
@@ -61,45 +94,44 @@ public class MyObservable<T> {
         MyObservable<T> upstream = this;
         return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
             @Override
-            public void call(MyObserver<T> callback) {
+            public void call(MyObserver<T> myObserver) {
                 scheduler.schedule(new Runnable() {
                     @Override
                     public void run() {
                         upstream.subscribe(new MyObserver<T>() {
                             @Override
                             public void onNext(T t) {
-                                callback.onNext(t);
+                                myObserver.onNext(t);
                             }
 
                             @Override
                             public void onCompleted() {
-                                callback.onCompleted();
+                                myObserver.onCompleted();
                             }
 
                             @Override
                             public void onError(Throwable e) {
-                                callback.onError(e);
+                                myObserver.onError(e);
                             }
                         });
                     }
                 });
-                scheduler.finish();
             }
-        });
+        }, scheduler);
     }
 
     public MyObservable<T> observeOn(Scheduler scheduler) {
         MyObservable<T> upstream = this;
         return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
             @Override
-            public void call(MyObserver<T> callback) {
+            public void call(MyObserver<T> myObserver) {
                 upstream.subscribe(new MyObserver<T>() {
                     @Override
                     public void onNext(T t) {
                         scheduler.schedule(new Runnable() {
                             @Override
                             public void run() {
-                                callback.onNext(t);
+                                myObserver.onNext(t);
                             }
                         });
                     }
@@ -109,10 +141,13 @@ public class MyObservable<T> {
                         scheduler.schedule(new Runnable() {
                             @Override
                             public void run() {
-                                callback.onCompleted();
+                                myObserver.onCompleted();
                             }
                         });
                         scheduler.finish();
+                        if (subscribeScheduler != null) {
+                            subscribeScheduler.finish();
+                        }
                     }
 
                     @Override
@@ -120,14 +155,17 @@ public class MyObservable<T> {
                         scheduler.schedule(new Runnable() {
                             @Override
                             public void run() {
-                                callback.onError(e);
+                                myObserver.onError(e);
                             }
                         });
                         scheduler.finish();
+                        if (subscribeScheduler != null) {
+                            subscribeScheduler.finish();
+                        }
                     }
                 });
             }
-        });
-
+        }, subscribeScheduler);
     }
+
 }

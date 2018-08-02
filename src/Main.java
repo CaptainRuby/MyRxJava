@@ -1,5 +1,3 @@
-import schedulers.Schedulers;
-
 public class Main {
 
     public static void main(String[] args) {
@@ -38,33 +36,67 @@ public class Main {
 //                    }
 //                });
 
+//        MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+//            @Override
+//            public void call(MyObserver<Integer> myObserver) {
+//                new Thread(new Runnable() {
+//                    @Override
+//                    public void run() {
+//                        myObserver.onNext(1);
+//                        myObserver.onNext(2);
+//                        myObserver.onNext(3);
+//                        myObserver.onCompleted();
+//                    }
+//                }).start();
+//            }
+//        })
+//                .subscribeOn()
+//                .observeOn(Schedulers.childThread())
+//                .map(new Func<Integer, String>() {
+//                    @Override
+//                    public String call(Integer integer) {
+//                        System.out.println("map:"+Thread.currentThread().getName());
+//                        return String.valueOf(integer);
+//                    }
+//                })
+//                .observeOn(Schedulers.newThread())
+//                .subscribe(new MyObserver<String>() {
+//                    @Override
+//                    public void onNext(String string) {
+//                        System.out.println("onNext:" + Thread.currentThread().getName());
+//                    }
+//
+//                    @Override
+//                    public void onCompleted() {
+//                        System.out.println("onCompleted");
+//                    }
+//
+//                    @Override
+//                    public void onError(Throwable e) {
+//
+//                    }
+//                });
+
         MyObservable.create(new MyAction1<MyObserver<Integer>>() {
             @Override
             public void call(MyObserver<Integer> myObserver) {
+                System.out.println("call:" + Thread.currentThread().getName());
                 myObserver.onNext(1);
                 myObserver.onNext(2);
                 myObserver.onNext(3);
                 myObserver.onCompleted();
-                System.out.println(Thread.currentThread().getName());
             }
         })
-                .subscribeOn(Schedulers.childThread())
-                .map(new Func<Integer, String>() {
+                .subscribeOn()
+                .subscribe(new MyObserver<Integer>() {
                     @Override
-                    public String call(Integer integer) {
-                        return String.valueOf(integer);
-                    }
-                })
-                .observeOn(Schedulers.childThread())
-                .subscribe(new MyObserver<String>() {
-                    @Override
-                    public void onNext(String string) {
+                    public void onNext(Integer integer) {
                         System.out.println("onNext:" + Thread.currentThread().getName());
                     }
 
                     @Override
                     public void onCompleted() {
-                        System.out.println("onCompleted");
+                        System.out.println("onCompleted" + Thread.currentThread().getName());
                     }
 
                     @Override
@@ -72,7 +104,6 @@ public class Main {
 
                     }
                 });
-
 
     }
 }

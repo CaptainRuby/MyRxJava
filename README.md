@@ -31,8 +31,10 @@
      - [事件发送](#事件发送)
      - [接收](#接收)
      - [操作符 just 的实现](#操作符-just-的实现) 
-  - [3.变换](#3变换) 
-  - [4.线程](#4线程) 
+  - [3.映射](#3映射) 
+  - [4.线程调度](#4线程调度) 
+     - [subscribeOn 的实现](#subscribeOn-的实现)
+     - [observeOn 的实现](#observeOn-的实现)
 
 ## **1.理解临时任务对象**
 
@@ -529,13 +531,13 @@ processNetDataJob 直接由 getDataJob 通过 ```map()``` 方法变换得到，�
 >  - Callback&lt;T&gt;，就是 Observer， 只是少了一个 ```onComplete( )``` 方法。
 >  - ```start(Callback callback)``` 方法，则对应 ```subscribe(Observer observer)``` 方法。
 
-## **2.事件的发送与接收**
+## 2.事件的发送与接收
 
 鉴于网上有很多从源码角度深入理解 RxJava 的文章，这里就不再做过多重复的分析。我们直接用 RxJava 所提供的设计思想，来看如何实现自己的 RxJava。
 
 众所周知，RxJava 采用的是观察者设计模式。由被观察者通知观察者自己的行为发生了变化，让观察者做出响应。在 RxJava 中，上游的 Observable 扮演了被观察者的角色，它能够发送事件，由下游的观察者 Observer 进行监听，在接收到事件后做出响应。
 
-### **RxJava 的发送和接收原理**
+### **RxJava的发送和接收原理**
 来看一个简单的例子。
 ```
 \\这里用的是 RxJava 1 的最后一个版本 1.3.8
@@ -591,7 +593,7 @@ public interface MyAction1<T> {
     void call(T t);
 }
 ```
-为了与上一节的各个类区分开，我们重新定义一下 Callback，将其改名为 MyObserver，并添加 ```onNext()``` 和 ```onCompleted()``` 方法。
+为了更加贴近 RxJava 的命名，我们重新定义一下 Callback，将其改名为 MyObserver，并添加 ```onNext()``` 和 ```onCompleted()``` 方法。
 ```
 public interface MyObserver<T> {
     void onNext(T t);
@@ -599,7 +601,7 @@ public interface MyObserver<T> {
     void onError(Throwable e);
 }
 ```
-再将 AsyncJob 修改成下面的 MyObservable，由于我们要添加一些方法，所以它不再是一个抽象类。
+将 AsyncJob 重命名为 MyObservable，同时将 `start()` 方法改为 `subscribe()` 方法。 由于我们要新增一些方法，所以它不再是一个抽象类。
 ```
 public class MyObservable<T> {
 
@@ -609,7 +611,7 @@ public class MyObservable<T> {
         this.action = action;
     }
 
-    public void start(MyObserver<T> myObserver) {
+    public void subscribe(MyObserver<T> myObserver) {
         action.call(myObserver);
     }
     
@@ -618,7 +620,7 @@ public class MyObservable<T> {
     }
 }
 ```
-可以看到，我们在构造函数里面接收了一个泛型为 MyObserver&lt;T&gt; 类型的 action，将其存储到内部的 action 中。在调用 ```start()``` 方法的时候，会调用 ```action.call()``` 方法，并传入一个 MyObserver 对象，它实现了对结果的回调。
+可以看到，我们在构造函数里面接收了一个泛型为 MyObserver&lt;T&gt; 类型的 action 并保存。在调用 ```subscribe()``` 方法的时候，会调用 ```action.call()``` 方法，并传入一个 MyObserver 对象，它实现了对结果的回调。
 
 我们还增加了一个 ```create()``` 的静态方法，接收一个 MyAction1&lt;MyObserver&lt;T&gt;&gt; 的参数，它返回了一个含有该 action 的 MyObservable 对象。事实上它只是调用了内部的构造函数，我们完全可以直接从外部调用 ```new MyObservable()``` 的方式去创建，但是为了和 RxJava 保持一致，我们采用声明一个静态方法 ```create()``` 的方式，并将构造函数声明为 private 。
 
@@ -637,10 +639,11 @@ MyObservable.create(new MyAction1<MyObserver<Integer>>() {
 ```
 通过调用 ```MyObservable.create()``` 方法传入一个匿名内部类 MyAction1<MyObserver<Integer>，其中回调接口 MyObserver 的泛型声明为 Integer 。然后我们在 ```call()``` 方法中定义了事件的发送逻辑，调用三次 ```onNext()``` ,最后调用一次 ```onCompleted()``` 方法，跟前面使用 RxJava 的方式是一样的，这样我们就完成了事件的发送。
 
-注意，这个时候我们还没有调用 ```start()``` 方法，所以它实际上还没有发送出去，而是处于“待命”状态。
+注意，这个时候我们还没有调用 ```subscribe()``` 方法，所以它实际上还没有发送出去，而是处于“待命”状态。
 
 ### **接收**
-接下来我们调用 ```start()``` 方法。
+
+接下来我们调用 ```subscribe()``` 方法。
 ```
 MyObservable.create(new MyAction1<MyObserver<Integer>>() {
     @Override
@@ -651,7 +654,7 @@ MyObservable.create(new MyAction1<MyObserver<Integer>>() {
         myObserver.onCompleted();
     }
 })
-    .start(new MyObserver<Integer>() {
+    .subscribe(new MyObserver<Integer>() {
     @Override
     public void onNext(Integer integer) {
         System.out.println("onNext:" + integer);
@@ -728,7 +731,7 @@ list.add(2);
 list.add(3);
 
 MyObservable.just(list)
-        .start(new MyObserver<Integer>() {
+        .subscribe(new MyObserver<Integer>() {
             @Override
             public void onNext(Integer integer) {
                 System.out.println("onNext:" + integer);
@@ -753,18 +756,332 @@ public static <T> Observable<T> just(T t1, T t2, T t3, T t4) {}
 
 public static <T> Observable<T> just(T t1, T t2, T t3, T t4, T t5) {}
 ```
-可以说是非常暴力了。但是内部实现是一样的，都是对这个序列进行遍历调用 ```onNext()``` 方法，最后再调用 ```onCompleted()``` 。
+可以说是非常暴力了。但是内部实现是一样的，都是对这个序列进行遍历调用 `onNext()` 方法，最后再调用 `onCompleted()` 。
 
 知道这个原理之后，我们就可以按照自己想要的方式自行定义我们的操作符，这里不做展开了。
 
-## **3.变换**
+## **3.映射**
 
 
 
-## **4.线程**
+在前面 [简单的映射](#简单的映射) 中，我们已经介绍了如何将一个 AsyncJob&lt;T&gt; 映射成一个 AsyncJob&lt;R&gt; 。
+
+现在我们只需要对原来的 `map()` 修改一下，就能实现 MyObservable 的 `map()` 方法。
+```
+public <R> MyObservable<R> map(Func<T, R> func) {
+    final MyObservable<T> upstream = this;
+    return new MyObservable<R>(new MyAction1<MyObserver<R>>() {
+        @Override
+        public void call(MyObserver<R> callback) {
+            upstream.start(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    callback.onNext(func.call(t));
+                }
+
+                @Override
+                public void onCompleted() {
+                    callback.onCompleted();
+                }
+
+                @Override
+                public void onError(Throwable e) {
+                    callback.onError(e);
+                }
+            });
+        }
+    });
+}
+```
+Func 接口保持不变，唯一需要改变的是将 Callback 接口替换成新的 MyObserver 接口，实现对应的回调方法。
+
+我们再来看一下使用。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+            @Override
+            public void call(MyObserver<Integer> myObserver) {
+                myObserver.onNext(1);
+                myObserver.onNext(2);
+                myObserver.onNext(3);
+                myObserver.onCompleted();
+            }
+        })
+            .map(new Func<Integer, String>() {
+                @Override
+                public String call(Integer integer) {
+                    return String.valueOf(integer);
+                }
+            })
+            .subscribe(new MyObserver<String>() {
+                @Override
+                public void onNext(String string) {
+                    System.out.println("onNext:" + string);
+                }
+
+                @Override
+                public void onCompleted() {
+                    System.out.println("onCompleted");
+                }
+
+                @Override
+                public void onError(Throwable e) {
+
+                }
+            });
+```
+我们在 `create()` 和 `subscribe()` 中间加入 `map()` 方法，在 `call()` 中实现了整形变量 integer 到 String 的转换。对于下游的 `subscribe()` 方法来说，调用它的主体已经从原来的 MyObservable&lt;Integer&gt; 类型转变为 MyObservable&lt;String&gt; 类型。
+
+## **4.线程调度**
+
+终于来到最后一个 part 了。线程调度是 RxJava 中另一核心部分，这也是我花最多时间去理解的地方。
+
+RxJava 是通过 `subscribeOn(Scheduler scheduler)` 和 `observeOn(Scheduler scheduler)` 两个方法来实现线程调度的。
+> - `subscribeOn()`，指定上游事件发送所在的线程，可以放在任何位置，但是只有第一次的指定是有效的。  
+> - `observeOn()`，指定下游事件接收所在的线程，可以多次指定，即如果有多次切换线程的需求，只要在每个需要切换的地方之前调用一次 `observeOn()` 即可。  
+> - Scheduler 是一个调度器的类，它指定了事件应该运行在什么线程。
+
+
+
+我们先来看下面这个例子。
+
+```
+Observable.just(1,2,3)
+        .subscribeOn(Schedulers.io())
+        .observeOn(Schedulers.newThread())
+        .map(new Func1<Integer, String>() {
+            @Override
+            public String call(Integer integer) {
+                return String.valueOf(integer);
+            }
+        })
+        .observeOn(Schedulers.computation())
+        .subscribe(new Subscriber<String>() {
+            @Override
+            public void onCompleted() {
+                System.out.println("onCompleted");
+            }
+
+            @Override
+            public void onError(Throwable e) {
+            }
+
+            @Override
+            public void onNext(String string) {
+                System.out.println("onNext:"+string);
+            }
+        });
+```
+使用 `just()` 方法创建一个 Observable，随后通过 `subscribeOn(Schedulers.io())` 指定 1,2,3 在 io 线程发送，并使用 `observeOn(Schedulers.newThread())` 指定 `map()` 操作在新的线程执行，最后调用 `observeOn(Schedulers.computation())` 让下游的回调在 computation 线程执行，总共完成了 3 次线程切换。
+
+接下来我们来看怎么实现。
+
+### **subscribeOn 的实现**
+
+我们先忽略 Schedule 的实现，只关注如何将上游的事件切换到新的线程中去执行。
+
+在 [事件发送](#事件发送) 中，我们是在 `action.call()` 中通过调用 `onNext()` 、`onCompleted()` 来产生事件的，因此我们可以将这些方法的放到一个新的线程中去调用。
+
+就像这样。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+    @Override
+    public void call(MyObserver<Integer> myObserver) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                myObserver.onNext(1);
+                myObserver.onNext(2);
+                myObserver.onNext(3);
+                myObserver.onCompleted();
+            }
+        }).start();
+    }
+})
+```
+当然我们不能这么简单粗暴的将新建线程的操作暴露在外面，使用者在调用 `create()` 方法的时候只关注事件如何发送，线程切换应该放在 `subscribeOn()` 方法中实现，所以我们要思考如何将这一系列的事件包裹到新的线程中运行。
+
+回顾 [简单的映射](#简单的映射) 中，我们在 `map()` 方法中将原来的 MyObservable 转变为一个新的 MyObservable，结合这种思想，我们是不是可以将普通的 MyObservable 转变成一个新的封装了线程操作的 MyObservable 呢？
+
+答案是肯定的。来看我们的 `subscribeOn()` 是怎么实现的。
+```
+public MyObservable<T> subscribeOn() {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    upstream.subscribe(new MyObserver<T>() {
+                        @Override
+                        public void onNext(T t) {
+                            myObserver.onNext(t);
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            myObserver.onCompleted();
+                        }
+
+                        @Override
+                        public void onError(Throwable e) {
+                            myObserver.onError(e);
+                        }
+                    });
+                }
+            }).start();
+        }
+    });
+}
+```
+同 `map()` 方法一样，我们用 `upsteam` 变量保存了当前的 MyObservable 实例，随后返回一个新的 MyObservable 对象，并在 `call()` 方法中开启了一个子线程，在 `run()` 方法中调用 `upsteam.subscribe()`，将上游 upsteam 中的回调全部转移到新 MyObservable 的回调中去，于是我们就实现了将一个普通的 MyObservable 转变为一个新的含有线程操作的 MyObservable 。
+
+看下使用效果。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+        @Override
+        public void call(MyObserver<Integer> myObserver) {
+            System.out.println("call:" + Thread.currentThread().getName());
+            myObserver.onNext(1);
+            myObserver.onNext(2);
+            myObserver.onNext(3);
+            myObserver.onCompleted();
+        }
+    })
+            .subscribeOn()
+            .subscribe(new MyObserver<Integer>() {
+                @Override
+                public void onNext(Integer integer) {
+                    System.out.println("onNext:" + Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onCompleted() {
+                    System.out.println("onCompleted" + Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onError(Throwable e) {
+
+                }
+            });
+```
+我们在 `call()` 、`onNext()` 和 `onCompleted()` 中打印了所在线程的名字，运行结果如下。
+
+> call:Thread-0  
+onNext:Thread-0  
+onNext:Thread-0  
+onNext:Thread-0  
+onCompletedThread-0  
+
+可以看到事件的发送和接收都在一个新的子线程 Thread-0 里面。
+
+我们来梳理一下执行的流程。
+
+![此处输入图片的描述][5]
+
+通过 `Observable.create()` 创建了 MyObservable ① ，随后调用 `subscribeOn()` 变换得到新的 MyObservable ② ，最后调用 `subscribe()` 传入一个 MyObserver  。注意，这里的 MyObserver 是传给 MyObservable ② 的，所以我们将其命名为 MyObserver ② 。
+
+在主线程的时候，由 MyObservable ② 调用 `subscribe()` 。 
+```
+public void subscribe(MyObserver<T> myObserver) {
+    action.call(myObserver);
+}
+```
+`subscribe()` 会调用 ② 中的 action 执行 `call()` 方法，它的实现就在刚才的 `subscribeOn()` 里面。
+```
+public MyObservable<T> subscribeOn() {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    upstream.subscribe(new MyObserver<T>() {
+                        @Override
+                        public void onNext(T t) {
+                            myObserver.onNext(t);
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            myObserver.onCompleted();
+                        }
+
+                        @Override
+                        public void onError(Throwable e) {
+                            myObserver.onError(e);
+                        }
+                    });
+                }
+            }).start();
+        }
+    });
+}
+```
+这里的 `call()` 我们已经在内部开启一个新线程，所以会进入 Thread-0 线程。在线程执行体中，我们调用了 `upsteam.subscirbe()` ，即 `①.subscribe()` ， ` subscribe()` 又会调用 ① 中的 action 执行 `①.call()` ， `①.call()` 的实现在我们最开始的 `create()` 里面。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+        @Override
+        public void call(MyObserver<Integer> myObserver) {
+            System.out.println("call:" + Thread.currentThread().getName());
+            myObserver.onNext(1);
+            myObserver.onNext(2);
+            myObserver.onNext(3);
+            myObserver.onCompleted();
+        }
+    })
+```
+我们调用了三次 `onNext()` 和一次 `onCompleted()` ，上图我只画了第一个 `onNext()` 的调用，即 `①.onNext()` ， `①.onNext()` 的回调在 `subscribe()` 中我们将其转发给了 `②.onNext()` 。
+```
+public MyObservable<T> subscribeOn() {
+    /*省略*/
+            upstream.subscribe(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    myObserver.onNext(t);
+                }
+        
+                @Override
+                public void onCompleted() {
+                    myObserver.onCompleted();
+                }
+        
+                @Override
+                public void onError(Throwable e) {
+                    myObserver.onError(e);
+                }
+            });
+    /*省略*/
+}
+```
+所以最终会来到一开始我们传入的 MyObserver 中，执行 `System.out.println()` 方法。
+```
+MyObservable.create()//省略实现
+            .subscribeOn()
+            .subscribe(new MyObserver<Integer>() {
+                @Override
+                public void onNext(Integer integer) {
+                    System.out.println("onNext:" + Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onCompleted() {
+                    System.out.println("onCompleted" + Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onError(Throwable e) {
+
+                }
+            });
+```
+### **observeOn 的实现**
 
 
   [1]: http://on-img.com/chart_image/5b5fd685e4b0edb750f22768.png
   [2]: http://on-img.com/chart_image/5b5fdbf9e4b025cf492eb91f.png
   [3]: http://on-img.com/chart_image/5b5fed46e4b0edb750f24f4d.png
   [4]: http://on-img.com/chart_image/5b6001cee4b0edb750f27dc5.png
+  [5]: http://on-img.com/chart_image/5b62ae73e4b08d36229b5205.png
