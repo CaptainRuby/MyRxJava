@@ -60,36 +60,6 @@ public class MyObservable<T> {
         }, subscribeScheduler);
     }
 
-    public MyObservable<T> subscribeOn() {
-        MyObservable<T> upstream = this;
-        return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
-            @Override
-            public void call(MyObserver<T> myObserver) {
-                new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        upstream.subscribe(new MyObserver<T>() {
-                            @Override
-                            public void onNext(T t) {
-                                myObserver.onNext(t);
-                            }
-
-                            @Override
-                            public void onCompleted() {
-                                myObserver.onCompleted();
-                            }
-
-                            @Override
-                            public void onError(Throwable e) {
-                                myObserver.onError(e);
-                            }
-                        });
-                    }
-                }).start();
-            }
-        });
-    }
-
     public MyObservable<T> subscribeOn(Scheduler scheduler) {
         MyObservable<T> upstream = this;
         return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
@@ -142,12 +112,9 @@ public class MyObservable<T> {
                             @Override
                             public void run() {
                                 myObserver.onCompleted();
+                                scheduler.finish();
                             }
                         });
-                        scheduler.finish();
-                        if (subscribeScheduler != null) {
-                            subscribeScheduler.finish();
-                        }
                     }
 
                     @Override
@@ -156,16 +123,14 @@ public class MyObservable<T> {
                             @Override
                             public void run() {
                                 myObserver.onError(e);
+                                scheduler.finish();
                             }
                         });
-                        scheduler.finish();
-                        if (subscribeScheduler != null) {
-                            subscribeScheduler.finish();
-                        }
                     }
                 });
             }
         }, subscribeScheduler);
     }
+
 
 }

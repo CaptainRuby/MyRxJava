@@ -772,21 +772,21 @@ public <R> MyObservable<R> map(Func<T, R> func) {
     final MyObservable<T> upstream = this;
     return new MyObservable<R>(new MyAction1<MyObserver<R>>() {
         @Override
-        public void call(MyObserver<R> callback) {
+        public void call(MyObserver<R> myObserver) {
             upstream.start(new MyObserver<T>() {
                 @Override
                 public void onNext(T t) {
-                    callback.onNext(func.call(t));
+                    myObserver.onNext(func.call(t));
                 }
 
                 @Override
                 public void onCompleted() {
-                    callback.onCompleted();
+                    myObserver.onCompleted();
                 }
 
                 @Override
                 public void onError(Throwable e) {
-                    callback.onError(e);
+                    myObserver.onError(e);
                 }
             });
         }
@@ -957,7 +957,7 @@ MyObservable.create(new MyAction1<MyObserver<Integer>>() {
 
                 @Override
                 public void onCompleted() {
-                    System.out.println("onCompleted" + Thread.currentThread().getName());
+                    System.out.println("onCompleted:" + Thread.currentThread().getName());
                 }
 
                 @Override
@@ -972,7 +972,7 @@ MyObservable.create(new MyAction1<MyObserver<Integer>>() {
 onNext:Thread-0  
 onNext:Thread-0  
 onNext:Thread-0  
-onCompletedThread-0  
+onCompleted:Thread-0  
 
 可以看到事件的发送和接收都在一个新的子线程 Thread-0 里面。
 
@@ -1077,7 +1077,484 @@ MyObservable.create()//省略实现
                 }
             });
 ```
+
+### **为什么 subscribeOn 只在第一次生效**
+
+我们来看下面的例子。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+        @Override
+        public void call(MyObserver<Integer> myObserver) {
+            System.out.println("call:" + Thread.currentThread().getName());
+            myObserver.onNext(1);
+        }
+    })
+            .subscribeOn()
+            .map(new Func<Integer, String>() {
+                @Override
+                public String call(Integer integer) {
+                    System.out.println("map:" + Thread.currentThread().getName());
+                    return String.valueOf(integer);
+                }
+            })
+            .subscribeOn()
+            .subscribe(new MyObserver<String>() {
+                @Override
+                public void onNext(String string) {
+                    System.out.println("onNext:" + Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onCompleted() {}
+
+                @Override
+                public void onError(Throwable e) {}
+            });
+```
+在create()后面和map()后面都调用了一次subscribeOn()，可能一开始我们会理所当然的觉得，create()中print()方法会发生在子线程1，map()中的print()会发生在子线程2，那么实际结果是怎样的呢？
+
+> call:Thread-1  
+map:Thread-1  
+onNext:Thread-1  
+
+所有的print()方法都发生在子线程1，也就是说第二个subscribeOn()是无效的。来看下流程图就知道为什么了。
+
+![此处输入图片的描述][6]
+
+可以看到，虽然我们在第二次调用subscribeOn()的时候，从主线程切换到了Thread-0线程，但是在第一次调用subscribe()的时候，它又让接下来的流程从Thread-0切换到Thread-1，而真正的事件发送，即onNext()以及它们的回调，统统发生在Thread-1里面，所以不管我们在第一次调用subscribeOn()之后，又调用了几次subscribeOn()，它们的作用只会让你的线程从main切换Thread-0，Thread-1，Thread-2，……，Thread-n，而onNext()以及它们的回调将会在最后一个新建出来的子线程执行（忽略 `observeOn()` 的影响）。
+
 ### **observeOn 的实现**
+
+前面讲过， `observeOn()` 方法作用的是它的直接下游，如果是在 `subscribe()` 前面调用的，那么它改变的是回调所在的线程，即onNext()、onCompleted()和onError()的实现。如果是在其他操作符如map(）前面调用的呢？其实也是一样的，我们再次回顾map()的实现。
+```
+public <R> MyObservable<R> map(Func<T, R> func) {
+    final MyObservable<T> upstream = this;
+    return new MyObservable<R>(new MyAction1<MyObserver<R>>() {
+        @Override
+        public void call(MyObserver<R> myObserver) {
+            upstream.start(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    myObserver.onNext(func.call(t));
+                }
+                @Override
+                public void onCompleted() {
+                    myObserver.onCompleted();
+                }
+                @Override
+                public void onError(Throwable e) {
+                    myObserver.onError(e);
+                }
+            });
+        }
+    });
+}
+```
+map()中的核心语句是func.call(t)的调用，并将其传递到下游的myObserver，所以要想切换func.call(t)所在的线程，就必须改变onNext()回调所在的线程。
+
+写法很简单，我们返回一个新的MyObservable，并在上游的onNext()回调中新建一个线程，再将回调传递给下游，也就是当前新返回的MyObservable。
+```
+public MyObservable<T> observeOn(Scheduler scheduler) {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            upstream.subscribe(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            myObserver.onNext(t);
+                        }
+                    }).start();
+                }
+
+                @Override
+                public void onCompleted() {
+                    myObserver.onCompleted();
+                }
+
+                @Override
+                public void onError(Throwable e) {
+                    myObserver.onError(e);
+                }
+            });
+        }
+    });
+}
+```
+这里我们忽略了对onCompleted()和onError()的处理，因为我们要保证它们和onNext()是执行在同一个子线程中的，需要借助线程池来实现，这个我们待会再讨论，现在只需关注怎么改变下游的线程。先来看看我们的observeOn()怎么使用吧。
+
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+    @Override
+    public void call(MyObserver<Integer> myObserver) {
+        System.out.println("call:" + Thread.currentThread().getName());
+        myObserver.onNext(1);
+    }
+})
+        .observeOn()
+        .subscribe(new MyObserver<Integer>() {
+            @Override
+            public void onNext(Integer integer) {
+                System.out.println("onNext:" + Thread.currentThread().getName());
+            }
+
+            @Override
+            public void onCompleted() {}
+
+            @Override
+            public void onError(Throwable e) {}
+        });
+```
+将下游的回调指定在新的子线程，运行结果如下。
+
+> call:main  
+onNext:Thread-0
+
+达到了我们想要的效果，再来梳理下执行流程。
+
+![此处输入图片的描述][7]
+
+我们通过 `create()` 操作和 `observeOn()` 生成了 MyObservable2 对象，随后调用 `subscribe()` 方法， `subscribe()` 方法会调用 `2.call()` 方法，而 `2.call()` 的实现我们是在 `observeOn()` 中声明的，即调用上游 MyObservable1 的 `subscribe()` 方法， `1.subscribe()` 方法调用 `1.call()` 方法， 它的实现在 `create()` 中已经声明，即调用 `1.onNext()` 方法， `1.onNext()` 的回调同样在 `observeOn()` 内部，此时会开启一个新的子线程，进入 Thread-0 ，在线程体中调用 `2.onNext()` ，它的回调在我们声明的 MyObserver2 中，即打印输出当前线程。
+
+讲起来很啰嗦，大家可以自己根据流程在纸上画一遍，一下子会清晰很多。
+
+最后我们再来看一个比较复杂的场景，由一个subscribeOn()和多个observeOn()同时使用的例子，代码如下。
+
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+    @Override
+    public void call(MyObserver<Integer> myObserver) {
+        System.out.println("call:" + Thread.currentThread().getName());
+        myObserver.onNext(1);
+    }
+})
+        .subscribeOn()
+        .observeOn()
+        .map(new Func<Integer, String>() {
+            @Override
+            public String call(Integer integer) {
+                System.out.println("map:" + Thread.currentThread().getName());
+                return String.valueOf(integer);
+            }
+        })
+        .observeOn()
+        .subscribe(new MyObserver<Integer>() {
+            @Override
+            public void onNext(Integer integer) {
+                System.out.println("onNext:" + Thread.currentThread().getName());
+            }
+
+            @Override
+            public void onCompleted() {}
+
+            @Override
+            public void onError(Throwable e) {}
+        });
+```
+这里一共切换了三次线程，运行结果如下。
+> call:Thread-0  
+map:Thread-1  
+onNext:Thread-2
+
+发送事件运行在Thread-0 线程，map映射运行在Thread-1 线程，结果回调发生在Thread-2 线程。流程如下所示。
+
+![此处输入图片的描述][8]
+
+看起来非常复杂，这里就不再赘述，需要大家比较耐心的看下去，跟随代码，理解线程是如何在整个流程中发生切换的。
+
+### **利用线程池进行调度**
+前面在写observeOn()方法的时候我们只对onNext()方法开启了子线程，而没有对onCompleted()和onError()进行操作。
+```
+public MyObservable<T> observeOn(Scheduler scheduler) {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            upstream.subscribe(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    new Thread(new Runnable() {
+                        @Override
+                        public void run() {
+                            myObserver.onNext(t);
+                        }
+                    }).start();
+                }
+
+                @Override
+                public void onCompleted() {
+                    myObserver.onCompleted();
+                }
+
+                @Override
+                public void onError(Throwable e) {
+                    myObserver.onError(e);
+                }
+            });
+        }
+    });
+}
+```
+因为它们之间其实是独立的关系，我们在onNext()中通过new Thread().start()的方式开启了一个子线程，但是我们没有办法让onCompleted()同样执行在这个新建出来的线程中。事实上，onNext()的写法也是有问题的。一旦我们在发送事件的时候，调用了多次onNext()，那么它在每次回调的时候，就会新开辟一个线程，导致所有事件都在不同的子线程中去处理，就不能保证事件能够按照发送的顺序进行接收了。
+
+那么解决的办法就是使用线程池来管理我们的线程。
+
+还记得RxJava在切换线程的时候是怎么写的吗？
+```
+Observable.just(1,2,3)
+        .subscribeOn(Schedulers.io())
+        .observeOn(Schedulers.newThread())
+```
+在调用subscribeOn()和observeOn()的时候，需要传入一个是Scheduler类的对象，前面说过，它相当于一个调度器，能够指定我们事件执行在什么线程，而Schedulers是一个单例，它用来管理和提供不同的调度器（即线程池）供开发者调用。
+
+我们可以模仿RxJava的方式来实现线程池的管理。首先定义一个Scheduler抽象类，它包含schedule()、finish()和isFinished()方法。
+```
+public abstract class Scheduler {
+    public abstract void schedule(Runnable runnable);
+    public abstract void finish();
+    public abstract boolean isFinished();
+}
+```
+
+接下来是我们提供两个Scheduler的实现类。
+```
+public class NewThreadScheduler extends Scheduler {
+
+    private ExecutorService executor;
+
+    private boolean isFinished = false;
+
+    public NewThreadScheduler() {
+        ThreadFactory threadFactory = new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                return new Thread(r, "MyRxJava-" + System.currentTimeMillis());
+            }
+        };
+        executor = Executors.newSingleThreadExecutor(threadFactory);
+    }
+
+    @Override
+    public void schedule(Runnable runnable) {
+        executor.execute(runnable);
+    }
+
+    @Override
+    public void finish() {
+        if (!isFinished) {
+            executor.shutdown();
+            isFinished = true;
+        }
+    }
+
+    @Override
+    public boolean isFinished() {
+        return isFinished;
+    }
+
+}
+```
+```
+public class ChildThreadScheduler extends Scheduler {
+
+    private ExecutorService executor;
+    
+    private boolean isFinished = false;
+
+    public ChildThreadScheduler() {
+        ThreadFactory threadFactory = new ThreadFactory() {
+            @Override
+            public Thread newThread(Runnable r) {
+                return new Thread(r, "MyRxJava-ChildThread-"+System.currentTimeMillis());
+            }
+        };
+        executor = Executors.newSingleThreadExecutor(threadFactory);
+    }
+
+    @Override
+    public void schedule(Runnable runnable) {
+        executor.execute(runnable);
+    }
+
+    @Override
+    public void finish() {
+        if (!isFinished) {
+            executor.shutdown();
+            isFinished = true;
+        }
+    }
+
+    @Override
+    public boolean isFinished() {
+        return isFinished;
+    }
+
+}
+```
+可以看到，我们分别在两个类的构造函数中，声明了一个 ThreadFactory，并将其传入 Executors.newSingleThreadExecutor()方法中，返回一个ExecutorService 对象。注意，这里使用newSingleThreadExecutor()是为了保证runnable对象能够按顺序进入线程池，以确保事件能够按照我们定义的顺序去执行。
+
+在schedule()方法中，我们调用executor.execute(runnable)方法，让线程池执行runnable对象，在finish()方法中，调用了executor.shutdown()方法，它会在线程池执行完任务后，关闭线程池。
+
+以上这些涉及到一些线程池的知识，不清楚地同学可以先去了解一下。
+
+这两个类的唯一区别，就是构造函数中ThreadFactory 返回的线程的名字不一样。在这里，我们只是为了做一个简单的区分。
+
+接着我们定义一个Schedulers的单例。
+```
+public class Schedulers {
+
+    private static class Singleton {
+        private static Schedulers instance = new Schedulers();
+    }
+
+    private static Schedulers getInstance() {
+        return Singleton.instance;
+    }
+
+    private ChildThreadScheduler childThreadScheduler;
+
+    public static Scheduler newThread() {
+        return new NewThreadScheduler();
+    }
+
+    public static Scheduler childThread() {
+        if (getInstance().childThreadScheduler == null) {
+            getInstance().childThreadScheduler = new ChildThreadScheduler();
+        }else if (getInstance().childThreadScheduler.isFinished()){
+            getInstance().childThreadScheduler = new ChildThreadScheduler();
+        }
+        return getInstance().childThreadScheduler;
+    }
+}
+```
+当调用 Schedulers.newThread()方法时，直接返回一个新的NewThreadScheduler对象。
+当调用 Schedulers.childThread()方法时，会返回一个单例中维护的ChildThreadScheduler对象，如果这个线程池为空或者已经被关闭，那么再重新返回一个新的实例。
+
+现在我们可以看出这两个线程池的区别，newThread()每次都会开启一个新的线程池，而childThread()则会使用同一个线程池。
+
+定义好线程管理相关的类后，我们就可以改造subscribeOn()方法了。
+```
+public MyObservable<T> subscribeOn(Scheduler scheduler) {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            scheduler.schedule(new Runnable() {
+                @Override
+                public void run() {
+                    upstream.subscribe(new MyObserver<T>() {
+                        @Override
+                        public void onNext(T t) {
+                            myObserver.onNext(t);
+                        }
+
+                        @Override
+                        public void onCompleted() {
+                            myObserver.onCompleted();
+                        }
+
+                        @Override
+                        public void onError(Throwable e) {
+                            myObserver.onError(e);
+                        }
+                    });
+                }
+            });
+        }
+    });
+}
+```
+我们将new Thread().start()的方式，改成了scheduler.schedule()，非常的简单。
+
+再看看ObserverOn()方法。
+```
+public MyObservable<T> observeOn(Scheduler scheduler) {
+    MyObservable<T> upstream = this;
+    return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
+        @Override
+        public void call(MyObserver<T> myObserver) {
+            upstream.subscribe(new MyObserver<T>() {
+                @Override
+                public void onNext(T t) {
+                    scheduler.schedule(new Runnable() {
+                        @Override
+                        public void run() {
+                            myObserver.onNext(t);
+                        }
+                    });
+                }
+
+                @Override
+                public void onCompleted() {
+                    scheduler.schedule(new Runnable() {
+                        @Override
+                        public void run() {
+                            myObserver.onCompleted();
+                            scheduler.finish();
+                        }
+                    });
+                }
+
+                @Override
+                public void onError(Throwable e) {
+                    scheduler.schedule(new Runnable() {
+                        @Override
+                        public void run() {
+                            myObserver.onError(e);
+                            scheduler.finish();
+                        }
+                    });
+                }
+            });
+        }
+    });
+}
+```
+现在，我们不管是在onNext()，onCompleted()还是onError()方法中，调用scheduler.schedule()方法，都是同一个scheduler对象在执行，即它们都跑在同一个线程池中。要注意的是，我们在 onCompleted() 和onError()方法的最后，还调用了一次finish()方法，将线程池关闭，否则程序会一直等待下去。
+
+再来测试一下。
+```
+MyObservable.create(new MyAction1<MyObserver<Integer>>() {
+        @Override
+        public void call(MyObserver<Integer> myObserver) {
+            System.out.println("call:" + Thread.currentThread().getName());
+            myObserver.onNext(1);
+            myObserver.onNext(2);
+            myObserver.onCompleted();
+        }
+    })
+            .subscribeOn(Schedulers.newThread())
+            .observeOn(Schedulers.newThread())
+            .subscribe(new MyObserver<Integer>() {
+                @Override
+                public void onNext(Integer integer) {
+                    System.out.println("onNext:" + integer+" "+Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onCompleted() {
+                    System.out.println("onCompleted:"+Thread.currentThread().getName());
+                }
+
+                @Override
+                public void onError(Throwable e) {}
+            });
+```
+运行结果如下。
+
+> call:MyRxJava-1533382601665  
+onNext:1 MyRxJava-1533382601666  
+onNext:2 MyRxJava-1533382601666  
+onCompleted:MyRxJava-1533382601666  
+
+效果不错，我们成功让事件在MyRxJava-1533382601665 线程中发送，并在MyRxJava-1533382601666 中回调结果，但是我们会发现，程序依然在运行状态，不会自动关闭，这是因为subscribeOn中传进去的scheduler还没有被关闭。那么现在问题来了，我们要怎样关闭这个scheduler？
+
+我们不能像observeOn()一样在onCompleted()和onError()的末端添加finish()，因为我们在subscribeOn()中传进去的scheduler可能在后续的ObserverOn()中会用到，如果提前关闭了线程池，会抛出RejectedExecutionException的异常。
+
+未完待续...
 
 
   [1]: http://on-img.com/chart_image/5b5fd685e4b0edb750f22768.png
@@ -1085,3 +1562,6 @@ MyObservable.create()//省略实现
   [3]: http://on-img.com/chart_image/5b5fed46e4b0edb750f24f4d.png
   [4]: http://on-img.com/chart_image/5b6001cee4b0edb750f27dc5.png
   [5]: http://on-img.com/chart_image/5b62ae73e4b08d36229b5205.png
+  [6]: http://on-img.com/chart_image/5b6543d7e4b08d36229e3592.png
+  [7]: http://on-img.com/chart_image/5b6556e6e4b08d36229e4b00.png
+  [8]: http://on-img.com/chart_image/5b65248be4b0edb750f944c5.png

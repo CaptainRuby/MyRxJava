@@ -8,11 +8,13 @@ public class ChildThreadScheduler extends Scheduler {
 
     private ExecutorService executor;
 
+    private boolean isFinished = false;
+
     public ChildThreadScheduler() {
         ThreadFactory threadFactory = new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
-                return new Thread(r, "MyRxJava-ChildThread");
+                return new Thread(r, "MyRxJava-ChildThread-" + System.currentTimeMillis());
             }
         };
         executor = Executors.newSingleThreadExecutor(threadFactory);
@@ -25,7 +27,15 @@ public class ChildThreadScheduler extends Scheduler {
 
     @Override
     public void finish() {
-        executor.shutdown();
+        if (!isFinished) {
+            executor.shutdown();
+            isFinished = true;
+        }
+    }
+
+    @Override
+    public boolean isFinished() {
+        return isFinished;
     }
 
 }

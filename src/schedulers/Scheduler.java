@@ -6,4 +6,6 @@ public abstract class Scheduler {
 
     public abstract void finish();
 
+    public abstract boolean isFinished();
+
 }

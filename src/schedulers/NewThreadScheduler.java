@@ -8,6 +8,8 @@ public class NewThreadScheduler extends Scheduler {
 
     private ExecutorService executor;
 
+    private boolean isFinished = false;
+
     public NewThreadScheduler() {
         ThreadFactory threadFactory = new ThreadFactory() {
             @Override
@@ -25,7 +27,15 @@ public class NewThreadScheduler extends Scheduler {
 
     @Override
     public void finish() {
-        executor.shutdown();
+        if (!isFinished) {
+            executor.shutdown();
+            isFinished = true;
+        }
+    }
+
+    @Override
+    public boolean isFinished() {
+        return isFinished;
     }
 
 }
