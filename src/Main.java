@@ -16,69 +16,6 @@ public class Main {
 //            }
 //        });
 
-//        List<Integer> list = new ArrayList<>();
-//        list.add(1);
-//        list.add(2);
-//        list.add(3);
-//        MyObservable.just(list)
-//                .subscribe(new MyObserver<Integer>() {
-//                    @Override
-//                    public void onNext(Integer integer) {
-//                        System.out.println("onNext:" + integer);
-//                    }
-//
-//                    @Override
-//                    public void onCompleted() {
-//                        System.out.println("onCompleted");
-//                    }
-//
-//                    @Override
-//                    public void onError(Throwable e) {
-//
-//                    }
-//                });
-
-//        MyObservable.create(new MyAction1<MyObserver<Integer>>() {
-//            @Override
-//            public void call(MyObserver<Integer> myObserver) {
-//                new Thread(new Runnable() {
-//                    @Override
-//                    public void run() {
-//                        myObserver.onNext(1);
-//                        myObserver.onNext(2);
-//                        myObserver.onNext(3);
-//                        myObserver.onCompleted();
-//                    }
-//                }).start();
-//            }
-//        })
-//                .subscribeOn()
-//                .observeOn(Schedulers.childThread())
-//                .map(new Func<Integer, String>() {
-//                    @Override
-//                    public String call(Integer integer) {
-//                        System.out.println("map:"+Thread.currentThread().getName());
-//                        return String.valueOf(integer);
-//                    }
-//                })
-//                .observeOn(Schedulers.newThread())
-//                .subscribe(new MyObserver<String>() {
-//                    @Override
-//                    public void onNext(String string) {
-//                        System.out.println("onNext:" + Thread.currentThread().getName());
-//                    }
-//
-//                    @Override
-//                    public void onCompleted() {
-//                        System.out.println("onCompleted");
-//                    }
-//
-//                    @Override
-//                    public void onError(Throwable e) {
-//
-//                    }
-//                });
-
         MyObservable.create(new MyAction1<MyObserver<Integer>>() {
             @Override
             public void call(MyObserver<Integer> myObserver) {
@@ -99,29 +36,13 @@ public class Main {
                 .observeOn(Schedulers.newThread())
                 .map(new Func<String, Integer>() {
                     @Override
-                    public Integer call(String integer) {
+                    public Integer call(String string) {
                         System.out.println("map:" + Thread.currentThread().getName());
-                        return 1;
+                        return Integer.parseInt(string);
                     }
                 })
                 .observeOn(Schedulers.childThread())
-                .map(new Func<Integer, String>() {
-                    @Override
-                    public String call(Integer integer) {
-                        System.out.println("map:" + Thread.currentThread().getName());
-                        return String.valueOf(integer);
-                    }
-                })
-                .observeOn(Schedulers.newThread())
-                .map(new Func<String, Integer>() {
-                    @Override
-                    public Integer call(String integer) {
-                        System.out.println("map:" + Thread.currentThread().getName());
-                        return 1;
-                    }
-                })
-                .observeOn(Schedulers.childThread())
-                .subscribe(new MyObserver<Integer>() {
+                .mySubscribe(new MyObserver<Integer>() {
                     @Override
                     public void onNext(Integer string) {
                         System.out.println("onNext:" + Thread.currentThread().getName());
@@ -129,7 +50,7 @@ public class Main {
 
                     @Override
                     public void onCompleted() {
-                        System.out.println("onCom:" + Thread.currentThread().getName());
+                        System.out.println("onCompleted:" + Thread.currentThread().getName());
                     }
 
                     @Override

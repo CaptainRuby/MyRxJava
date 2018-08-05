@@ -6,38 +6,38 @@ import java.util.concurrent.ThreadFactory;
 
 public class ChildThreadScheduler extends Scheduler {
 
-    private ExecutorService executor;
+	private ExecutorService executor;
 
-    private boolean isFinished = false;
+	private boolean isFinished = false;
 
-    public ChildThreadScheduler() {
-        ThreadFactory threadFactory = new ThreadFactory() {
-            @Override
-            public Thread newThread(Runnable r) {
-                return new Thread(r, "ChildThread-" + System.currentTimeMillis());
-            }
-        };
-        executor = Executors.newSingleThreadExecutor(threadFactory);
-    }
+	public ChildThreadScheduler() {
+		ThreadFactory threadFactory = new ThreadFactory() {
+			@Override
+			public Thread newThread(Runnable r) {
+				return new Thread(r, "ChildThread-" + System.currentTimeMillis());
+			}
+		};
+		executor = Executors.newSingleThreadExecutor(threadFactory);
+	}
 
-    @Override
-    public void schedule(Runnable runnable) {
-        if (!isFinished) {
-            executor.execute(runnable);
-        }
-    }
+	@Override
+	public void schedule(Runnable runnable) {
+		if (!isFinished) {
+			executor.execute(runnable);
+		}
+	}
 
-    @Override
-    public void finish() {
-        if (!isFinished) {
-            executor.shutdown();
-            isFinished = true;
-        }
-    }
+	@Override
+	public void finish() {
+		if (!isFinished) {
+			executor.shutdown();
+			isFinished = true;
+		}
+	}
 
-    @Override
-    public boolean isFinished() {
-        return isFinished;
-    }
+	@Override
+	public boolean isFinished() {
+		return isFinished;
+	}
 
 }
