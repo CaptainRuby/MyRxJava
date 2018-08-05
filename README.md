@@ -1912,14 +1912,14 @@ onCompleted:ChildThread-1533441899658
 
 
   [1]: https://github.com/CaptainRuby/MyRxJava
-  [2]: http://on-img.com/chart_image/5b5fd685e4b0edb750f22768.png
-  [3]: http://on-img.com/chart_image/5b5fdbf9e4b025cf492eb91f.png
-  [4]: http://on-img.com/chart_image/5b5fed46e4b0edb750f24f4d.png
-  [5]: http://on-img.com/chart_image/5b6001cee4b0edb750f27dc5.png
-  [6]: http://on-img.com/chart_image/5b62ae73e4b08d36229b5205.png
-  [7]: http://on-img.com/chart_image/5b6543d7e4b08d36229e3592.png
-  [8]: http://on-img.com/chart_image/5b6556e6e4b08d36229e4b00.png
-  [9]: http://on-img.com/chart_image/5b65248be4b0edb750f944c5.png
-  [10]: http://on-img.com/chart_image/5b667424e4b0f8477da35bb6.png
+  [2]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/1.png
+  [3]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/2.png
+  [4]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/3.png
+  [5]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/4.png
+  [6]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/5.png
+  [7]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/6.png
+  [8]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/7.png
+  [9]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/8.png
+  [10]: https://raw.githubusercontent.com/CaptainRuby/MyRxJava/master/img/9.png
   [11]: https://gank.io/post/560e15be2dca930e00da1083
   [12]: https://blog.csdn.net/jeasonlzy/article/category/7004637
