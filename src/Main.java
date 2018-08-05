@@ -87,7 +87,23 @@ public class Main {
                 myObserver.onCompleted();
             }
         })
-                .subscribeOn(Schedulers.childThread())
+                .subscribeOn(Schedulers.newThread())
+                .observeOn(Schedulers.childThread())
+                .map(new Func<Integer, String>() {
+                    @Override
+                    public String call(Integer integer) {
+                        System.out.println("map:" + Thread.currentThread().getName());
+                        return String.valueOf(integer);
+                    }
+                })
+                .observeOn(Schedulers.newThread())
+                .map(new Func<String, Integer>() {
+                    @Override
+                    public Integer call(String integer) {
+                        System.out.println("map:" + Thread.currentThread().getName());
+                        return 1;
+                    }
+                })
                 .observeOn(Schedulers.childThread())
                 .map(new Func<Integer, String>() {
                     @Override
@@ -113,14 +129,14 @@ public class Main {
 
                     @Override
                     public void onCompleted() {
-
+                        System.out.println("onCom:" + Thread.currentThread().getName());
                     }
 
                     @Override
                     public void onError(Throwable e) {
 
                     }
-                }).finish();
+                });
 
     }
 }

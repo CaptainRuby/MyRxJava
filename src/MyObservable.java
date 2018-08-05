@@ -1,18 +1,22 @@
+import example.AsyncJob;
 import schedulers.Scheduler;
+
+import java.util.*;
 
 public class MyObservable<T> {
 
     private MyAction1<MyObserver<T>> action;
 
-    private Scheduler subscribeScheduler;
+    private Set<Scheduler> schedulers;
 
     private MyObservable(MyAction1<MyObserver<T>> action) {
         this.action = action;
+        this.schedulers = new HashSet<>();
     }
 
-    private MyObservable(MyAction1<MyObserver<T>> action, Scheduler scheduler) {
+    private MyObservable(MyAction1<MyObserver<T>> action, Set<Scheduler> schedulers) {
         this.action = action;
-        subscribeScheduler = scheduler;
+        this.schedulers = schedulers;
     }
 
     public static <T> MyObservable<T> create(MyAction1<MyObserver<T>> action) {
@@ -32,35 +36,58 @@ public class MyObservable<T> {
     }
 
     public void subscribe(MyObserver<T> myObserver) {
-        action.call(myObserver);
+        action.call(new MyObserver<T>() {
+            @Override
+            public void onNext(T t) {
+                myObserver.onNext(t);
+            }
+
+            @Override
+            public void onCompleted() {
+                myObserver.onCompleted();
+                for (Scheduler scheduler : schedulers) {
+                    scheduler.finish();
+                }
+            }
+
+            @Override
+            public void onError(Throwable e) {
+                myObserver.onError(e);
+                for (Scheduler scheduler : schedulers) {
+                    scheduler.finish();
+                }
+            }
+        });
     }
+
 
     public <R> MyObservable<R> map(Func<T, R> func) {
         final MyObservable<T> upstream = this;
         return new MyObservable<R>(new MyAction1<MyObserver<R>>() {
             @Override
-            public void call(MyObserver<R> callback) {
+            public void call(MyObserver<R> myObserver) {
                 upstream.subscribe(new MyObserver<T>() {
                     @Override
                     public void onNext(T t) {
-                        callback.onNext(func.call(t));
+                        myObserver.onNext(func.call(t));
                     }
 
                     @Override
                     public void onCompleted() {
-                        callback.onCompleted();
+                        myObserver.onCompleted();
                     }
 
                     @Override
                     public void onError(Throwable e) {
-                        callback.onError(e);
+                        myObserver.onError(e);
                     }
                 });
             }
-        }, subscribeScheduler);
+        }, schedulers);
     }
 
     public MyObservable<T> subscribeOn(Scheduler scheduler) {
+        schedulers.add(scheduler);
         MyObservable<T> upstream = this;
         return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
             @Override
@@ -87,10 +114,11 @@ public class MyObservable<T> {
                     }
                 });
             }
-        }, scheduler);
+        }, schedulers);
     }
 
     public MyObservable<T> observeOn(Scheduler scheduler) {
+        schedulers.add(scheduler);
         MyObservable<T> upstream = this;
         return new MyObservable<T>(new MyAction1<MyObserver<T>>() {
             @Override
@@ -112,7 +140,6 @@ public class MyObservable<T> {
                             @Override
                             public void run() {
                                 myObserver.onCompleted();
-                                scheduler.finish();
                             }
                         });
                     }
@@ -123,13 +150,12 @@ public class MyObservable<T> {
                             @Override
                             public void run() {
                                 myObserver.onError(e);
-                                scheduler.finish();
                             }
                         });
                     }
                 });
             }
-        }, subscribeScheduler);
+        }, schedulers);
     }
 
 

@@ -14,7 +14,7 @@ public class NewThreadScheduler extends Scheduler {
         ThreadFactory threadFactory = new ThreadFactory() {
             @Override
             public Thread newThread(Runnable r) {
-                return new Thread(r, "MyRxJava-" + System.currentTimeMillis());
+                return new Thread(r, "NewThread-" + System.currentTimeMillis());
             }
         };
         executor = Executors.newSingleThreadExecutor(threadFactory);
@@ -22,7 +22,9 @@ public class NewThreadScheduler extends Scheduler {
 
     @Override
     public void schedule(Runnable runnable) {
-        executor.execute(runnable);
+        if (!isFinished) {
+            executor.execute(runnable);
+        }
     }
 
     @Override
